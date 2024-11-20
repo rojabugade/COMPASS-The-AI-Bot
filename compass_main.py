@@ -1,20 +1,13 @@
 import os
 import streamlit as st
-
-__import__('pysqlite3') 
-import sys 
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
 import pandas as pd
 import docx
 from typing import Dict
-
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain_community.document_loaders import DataFrameLoader
-
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
+from langchain.vectorstores import Chroma
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.document_loaders import DataFrameLoader
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain.agents import Tool, AgentExecutor, ZeroShotAgent
@@ -69,9 +62,9 @@ class UniversityRecommendationSystem:
             )
             
             # Load datasets
-            living_expenses_df = pd.read_csv(os.path.join(self.data_path, "data/Avg_Living_Expenses.csv"))
-            employment_df = pd.read_csv(os.path.join(self.data_path, "data/Employment_Projections.csv"))
-            university_text = self.load_word_document(os.path.join(self.data_path, "data/University_Data.docx"))
+            living_expenses_df = pd.read_csv(os.path.join(self.data_path, "Avg_Living_Expenses.csv"))
+            employment_df = pd.read_csv(os.path.join(self.data_path, "Employment_Projections.csv"))
+            university_text = self.load_word_document(os.path.join(self.data_path, "University_Data.docx"))
             
             # Process living expenses
             living_expenses_loader = DataFrameLoader(

@@ -2,7 +2,9 @@ streamlit
 openai==0.28
 chromadb==0.3.22
 langchain
-docx
+langchain-community
+langchain-openai
+python-docx
 beautifulsoup4
 pillow
 pysqlite3-binary
