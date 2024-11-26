@@ -6,21 +6,11 @@ from typing import Dict
 
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.chat_models import ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain_community.document_loaders import DataFrameLoader
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.agents import Tool, AgentExecutor, ZeroShotAgent
-from chromadb.config import Settings
 import json
 from datetime import datetime
 import openai
-import requests
-import uuid
-import docx2txt
-from pathlib import Path
 
 # Streamlit Configuration
 st.set_page_config(
