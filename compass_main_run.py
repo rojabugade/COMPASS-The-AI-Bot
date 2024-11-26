@@ -306,7 +306,7 @@ def main():
                 # Add bot response to chat history
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     try:
         main()
     except Exception as e:
