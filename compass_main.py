@@ -5,13 +5,17 @@ import docx
 from typing import Dict
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.chat_models import ChatOpenAI
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import Pinecone
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import DataFrameLoader
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain.agents import Tool, AgentExecutor, ZeroShotAgent
-from chromadb.config import Settings
+import pinecone  # Import Pinecone
+
+__import__('pysqlite3') 
+import sys 
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 # Set up Streamlit page configuration
 st.set_page_config(
@@ -31,6 +35,8 @@ class UniversityRecommendationSystem:
         """Initialize the recommendation system with necessary components."""
         self.openai_api_key = st.secrets["open-key"]
         self.weather_api_key = st.secrets["open-weather"]
+        self.pinecone_api_key = st.secrets["pinecone_api_key"]  # Add Pinecone API key
+        self.pinecone_environment = st.secrets["pinecone_environment"]  # Add Pinecone environment
         self.embeddings = OpenAIEmbeddings(openai_api_key=self.openai_api_key)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -39,9 +45,21 @@ class UniversityRecommendationSystem:
         )
         self.data_path = "./data"
         os.makedirs(os.path.join(self.data_path, "preferences"), exist_ok=True)
+        self.initialize_pinecone()  # Initialize Pinecone
         self.initialize_databases()
         self.setup_tools()
         self.setup_agent()
+
+    def initialize_pinecone(self):
+        """Initialize the Pinecone client."""
+        try:
+            pinecone.init(
+                api_key=self.pinecone_api_key,
+                environment=self.pinecone_environment
+            )
+        except Exception as e:
+            st.error(f"Error initializing Pinecone: {str(e)}")
+            raise e
 
     def load_word_document(self, file_path: str) -> str:
         """Load content from a Word document."""
@@ -53,57 +71,82 @@ class UniversityRecommendationSystem:
             return ""
 
     def initialize_databases(self):
-        """Initialize ChromaDB instances with different datasets."""
+        """Initialize Pinecone vector stores with different datasets."""
         try:
-            chroma_settings = Settings(
-                anonymized_telemetry=False,
-                allow_reset=True,
-                is_persistent=True
-            )
-            
             # Load datasets
             living_expenses_df = pd.read_csv(os.path.join(self.data_path, "Avg_Living_Expenses.csv"))
             employment_df = pd.read_csv(os.path.join(self.data_path, "Employment_Projections.csv"))
             university_text = self.load_word_document(os.path.join(self.data_path, "University_Data.docx"))
-            
+
             # Process living expenses
             living_expenses_loader = DataFrameLoader(
                 living_expenses_df,
                 page_content_column="State"
             )
             living_expenses_docs = living_expenses_loader.load()
-            
+
             # Process employment projections
             employment_loader = DataFrameLoader(
                 employment_df,
                 page_content_column="Occupation Title"
             )
             employment_docs = employment_loader.load()
-            
+
             # Process university data
             university_docs = self.text_splitter.create_documents([university_text])
-            
-            # Create ChromaDB instances
-            self.university_db = Chroma.from_documents(
+
+            # Define embedding dimension (OpenAI's embeddings are 1536-dimensional)
+            embedding_dimension = 1536
+
+            # Create Pinecone indexes and vector stores
+            # University Information
+            index_name_university = "university-info"
+            if index_name_university not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=index_name_university,
+                    dimension=embedding_dimension,
+                    metric='cosine'
+                )
+
+            self.university_db = Pinecone.from_documents(
                 documents=university_docs,
                 embedding=self.embeddings,
-                collection_name="university_info",
-                client_settings=chroma_settings
+                index_name=index_name_university,
+                namespace="university"
             )
-            
-            self.living_expenses_db = Chroma.from_documents(
+
+            # Living Expenses
+            index_name_living = "living-expenses"
+            if index_name_living not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=index_name_living,
+                    dimension=embedding_dimension,
+                    metric='cosine'
+                )
+
+            self.living_expenses_db = Pinecone.from_documents(
                 documents=living_expenses_docs,
                 embedding=self.embeddings,
-                collection_name="living_expenses",
-                client_settings=chroma_settings
+                index_name=index_name_living,
+                namespace="living_expenses"
             )
-            
-            self.employment_db = Chroma.from_documents(
+
+            # Employment Projections
+            index_name_employment = "employment-projections"
+            if index_name_employment not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=index_name_employment,
+                    dimension=embedding_dimension,
+                    metric='cosine'
+                )
+
+            self.employment_db = Pinecone.from_documents(
                 documents=employment_docs,
                 embedding=self.embeddings,
-                collection_name="employment_projections",
-                client_settings=chroma_settings
+                index_name=index_name_employment,
+                namespace="employment"
             )
+
         except Exception as e:
             st.error(f"Error initializing databases: {str(e)}")
             raise e
@@ -149,7 +192,7 @@ class UniversityRecommendationSystem:
             2. Cost and affordability
             3. Location and weather
             4. Job prospects
-            
+
             Guidelines:
             - Keep responses under 150 words
             - Focus on most relevant information
@@ -160,10 +203,10 @@ class UniversityRecommendationSystem:
 
             Current conversation:
             {chat_history}
-            
+
             Human: {input}
             Assistant: Let me help you find the best matches.
-            
+
             {agent_scratchpad}"""
 
             prompt = ZeroShotAgent.create_prompt(
@@ -197,7 +240,7 @@ class UniversityRecommendationSystem:
     def get_living_expenses(self, state: str) -> str:
         """Retrieve living expenses information."""
         try:
-            results = self.living_expenses_db.similarity_search(state, k=1)
+            results = self.living_expenses_db.similarity_search(state, k=1, namespace="living_expenses")
             return results[0].page_content if results else "No information found."
         except Exception as e:
             return f"Error retrieving living expenses: {str(e)}"
@@ -205,7 +248,7 @@ class UniversityRecommendationSystem:
     def get_job_market_trends(self, field: str) -> str:
         """Retrieve job market trends."""
         try:
-            results = self.employment_db.similarity_search(field, k=3)
+            results = self.employment_db.similarity_search(field, k=3, namespace="employment")
             return "\n".join([doc.page_content for doc in results])
         except Exception as e:
             return f"Error retrieving job market trends: {str(e)}"
@@ -213,7 +256,7 @@ class UniversityRecommendationSystem:
     def get_university_info(self, query: str) -> str:
         """Retrieve university information."""
         try:
-            results = self.university_db.similarity_search(query, k=3)
+            results = self.university_db.similarity_search(query, k=3, namespace="university")
             return "\n".join([doc.page_content for doc in results])
         except Exception as e:
             return f"Error retrieving university information: {str(e)}"
@@ -248,7 +291,7 @@ class UniversityRecommendationSystem:
                 response = self.agent_executor.invoke(
                     {
                         "input": enhanced_query,
-                        "chat_history": st.session_state.chat_history[-3:] # Only use last 3 messages for context
+                        "chat_history": st.session_state.chat_history[-3:]  # Only use last 3 messages for context
                     },
                     {"timeout": 30}  # 30 second timeout
                 )
@@ -257,7 +300,7 @@ class UniversityRecommendationSystem:
                 return "I apologize, but I couldn't process your request in time. Please try asking a more specific question."
             except Exception as e:
                 return "I apologize, but I couldn't process your request. Please try rephrasing your question more specifically."
-                
+
         except Exception as e:
             return "I encountered an error. Please try asking a more specific question."
 
@@ -275,7 +318,7 @@ def initialize_recommender():
 def main():
     """Main Streamlit application."""
     st.title("🎓 COMPASS - University Recommendation System")
-    
+
     # Initialize the recommender
     if not initialize_recommender():
         return
@@ -283,7 +326,7 @@ def main():
     # Sidebar for user preferences
     with st.sidebar:
         st.header("📋 Your Preferences")
-        
+
         # Initialize default preferences
         default_preferences = {
             "field_of_study": "Computer Science",
@@ -292,12 +335,12 @@ def main():
             "preferred_locations": [],
             "weather_preference": "Moderate"
         }
-        
+
         # Use session state to track if preferences are set
         if 'preferences_set' not in st.session_state:
             st.session_state.preferences_set = False
             st.session_state.user_preferences = default_preferences
-        
+
         field_of_study = st.selectbox(
             "Field of Study",
             ["Computer Science", "Engineering", "Business", "Sciences", "Arts", "Other"],
@@ -305,28 +348,28 @@ def main():
                 st.session_state.user_preferences.get("field_of_study", "Computer Science")
             )
         )
-        
+
         budget_range = st.slider(
             "Budget Range (USD/Year)",
-            0, 100000, 
+            0, 100000,
             value=(
                 st.session_state.user_preferences.get("budget_min", 20000),
                 st.session_state.user_preferences.get("budget_max", 50000)
             )
         )
-        
+
         preferred_location = st.multiselect(
             "Preferred Locations",
             ["Northeast", "Southeast", "Midwest", "Southwest", "West Coast"],
             default=st.session_state.user_preferences.get("preferred_locations", [])
         )
-        
+
         weather_preference = st.select_slider(
             "Weather Preference",
             options=["Cold", "Moderate", "Warm", "Hot"],
             value=st.session_state.user_preferences.get("weather_preference", "Moderate")
         )
-        
+
         if st.button("💾 Save Preferences"):
             user_prefs = {
                 "field_of_study": field_of_study,
@@ -335,7 +378,7 @@ def main():
                 "preferred_locations": preferred_location,
                 "weather_preference": weather_preference
             }
-            
+
             # Update session state
             st.session_state.user_preferences = user_prefs
             st.session_state.preferences_set = True
@@ -346,9 +389,9 @@ def main():
 
     if not st.session_state.preferences_set:
         st.warning("👋 Please set your preferences in the sidebar before starting the conversation. "
-                  "This will help me provide more personalized recommendations!")
+                   "This will help me provide more personalized recommendations!")
         return
-    
+
     # Clear chat button
     if st.button("🗑️ Clear Chat", key="clear_chat"):
         st.session_state.chat_history = []
@@ -363,24 +406,21 @@ def main():
             st.write(message["content"])
 
     # Chat input
-    if prompt := st.chat_input("Ask me about universities, programs, costs, or job prospects...", 
-                             disabled=not st.session_state.preferences_set):
+    if prompt := st.chat_input("Ask me about universities, programs, costs, or job prospects...",
+                               disabled=not st.session_state.preferences_set):
         # Add user message to chat history
         st.session_state.chat_history.append({"role": "user", "content": prompt})
-        
+
         # Display user message immediately
         with st.chat_message("user"):
             st.write(prompt)
-        
+
         # Display assistant response with typing indicator
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 # Get bot response
                 response = st.session_state.recommender.get_recommendations(prompt)
                 st.write(response)
-                
+
                 # Add bot response to chat history
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
-
-if __name__ == "__main__":
-    main()
