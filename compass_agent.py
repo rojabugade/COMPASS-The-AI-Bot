@@ -1,9 +1,13 @@
 # Importing necessary libraries for the system
 import os
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import streamlit as st
 import pandas as pd
 import docx
 from docx import Document
+from typing import Dict, List, Optional
 import chromadb
 from chromadb.utils import embedding_functions
 from openai import OpenAI
@@ -657,7 +661,7 @@ def get_top_recommendations() -> str:
         prompt = f"""Generate top 3 university recommendations based on these preferences:
         - Field of Study: {preferences['field_of_study']}
         - Budget Range: ${preferences['budget_min']}-${preferences['budget_max']}
-        - Preferred Locations: {', '.join(preferences['preferred_locations'])}
+        - Preferred Regions: {', '.join(preferences['preferred_locations'])}
         - Weather Preference: {preferences['weather_preference']}
 
         Format each recommendation as:
@@ -956,20 +960,20 @@ def show_preferences_form(existing_preferences=None):
 
     # Locations
     st.session_state.use_all_locations = st.checkbox(
-        "All Locations",
+        "All Regions",
         value=st.session_state.use_all_locations,
-        help="Select this to consider all locations",
+        help="Select this to consider all regions",
     )
     if not st.session_state.use_all_locations:
         preferred_locations = st.multiselect(
-            "Preferred Locations",
+            "Preferred Regions",
             ["Northeast", "Southeast", "Midwest", "Southwest", "West Coast"],
             default=existing_preferences.get("preferred_locations", []) if existing_preferences else [],
-            help="Select your preferred locations",
+            help="Select your preferred regions",
         )
     else:
         preferred_locations = ["Northeast", "Southeast", "Midwest", "Southwest", "West Coast"]
-        st.info("Considering all locations")
+        st.info("Considering all regions")
 
     # Weather Preferences
     st.session_state.use_all_weather = st.checkbox(
@@ -980,12 +984,12 @@ def show_preferences_form(existing_preferences=None):
     if not st.session_state.use_all_weather:
         weather_preferences = st.multiselect(
             "Weather Preferences",
-            ["Cold", "Moderate", "Warm", "Hot"],
+            ["Cold", "Warm", "Hot"],
             default=existing_preferences.get("weather_preference", []) if existing_preferences else [],
             help="Select multiple weather preferences",
         )
     else:
-        weather_preferences = ["Cold", "Moderate", "Warm", "Hot"]
+        weather_preferences = ["Cold", "Warm", "Hot"]
         st.info("Considering all weather types")
 
     # Save Preferences Button
