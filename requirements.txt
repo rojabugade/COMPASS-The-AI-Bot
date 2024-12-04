@@ -12,3 +12,9 @@ python-docx
 langchain
 langchain-community
 pinecone
+
+pandas
+python-docx
+requests
+pysqlite3-binary
+docx
