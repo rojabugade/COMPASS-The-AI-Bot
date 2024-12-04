@@ -12,7 +12,7 @@ python-docx
 langchain
 langchain-community
 pinecone
-
+chromadb
 pandas
 python-docx
 requests
