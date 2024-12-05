@@ -1004,6 +1004,13 @@ def show_preferences_form(existing_preferences=None):
         }
         save_user_preferences(st.session_state.current_user, preferences)
         st.success("Preferences saved successfully!")
+        st.success("✅ Preferences saved successfully!")
+            
+            st.session_state.show_preferences = False
+            st.rerun()
+            
+            return True
+    return False
 
 
 def show_application_tracker():
